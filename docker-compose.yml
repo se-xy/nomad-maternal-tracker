@@ -1,0 +1,52 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nmt
+      POSTGRES_USER: nmt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro   # 01_schema.sql, 02_seed.sql run on first start
+      - pgdata:/var/lib/postgresql/data
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      GENERIC_TIMEZONE: Africa/Nairobi
+      TZ: Africa/Nairobi
+      N8N_SECURE_COOKIE: "false"   # local http only; remove behind HTTPS
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+      - mosquitto
+
+  dashboard:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./dashboard:/usr/share/nginx/html/dashboard:ro
+      - ./geo:/usr/share/nginx/html/geo:ro
+    depends_on:
+      - n8n
+
+volumes:
+  pgdata:
+  n8n_data:

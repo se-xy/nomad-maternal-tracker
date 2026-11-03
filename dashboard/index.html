@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nomad Maternal Tracker — Outreach Map</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f6f3ee; --panel: #ffffff; --ink: #1f1d1a; --muted: #6f6a62; --line: #e4ddd2;
+    --accent: #c2410c;
+    --ok: #2e7d32; --anc: #d99a06; --low: #ea580c; --border: #7c3aed;
+    --lostsig: #64748b; --lostbat: #b91c1c; --nodata: #a8a29e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg);
+         display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 12px 16px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  .badge { font-size: 11.5px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
+  .badge.live { color: var(--ok); border-color: currentColor; }
+  .badge.demo { color: var(--accent); border-color: currentColor; }
+  .asof { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+  main { display: grid; grid-template-columns: 360px 1fr; min-height: 0; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 9px; border-radius: 999px;
+          border: 1px solid var(--line); background: #fff; cursor: pointer; color: var(--ink); }
+  .chip[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .listhead { padding: 10px 14px 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  ol { list-style: none; margin: 0; padding: 0 8px 12px; overflow-y: auto; }
+  li { padding: 10px 8px; border-radius: 8px; cursor: pointer; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; }
+  li:hover, li.sel { background: #f3efe8; }
+  li .dot { margin-top: 5px; }
+  li .name { font-weight: 600; }
+  li .tag { font-size: 10.5px; font-weight: 700; color: var(--lostbat); margin-left: 6px; letter-spacing: .03em; }
+  li .meta { grid-column: 2 / 4; color: var(--muted); font-size: 12px; }
+  li .prio { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+  #map { min-height: 0; }
+  .legend { background: rgba(255,255,255,.95); padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.7;
+            box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .legend i { display: inline-block; width: 18px; border-top: 2px dashed; vertical-align: middle; margin-right: 6px; }
+  .pop b { font-size: 13.5px; } .pop table { border-collapse: collapse; margin-top: 4px; }
+  .pop td { padding: 1px 8px 1px 0; font-size: 12px; } .pop td:first-child { color: var(--muted); }
+  .note { padding: 10px 14px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); }
+  @media (max-width: 760px) {
+    html, body { height: auto; }
+    body { display: block; }
+    main { display: flex; flex-direction: column; }
+    #map { order: 1; height: 55vh; }
+    aside { order: 2; border-right: 0; border-top: 1px solid var(--line); }
+    ol { overflow: visible; }
+    .legend { font-size: 11px; line-height: 1.5; padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Nomad Maternal Tracker</h1>
+    <div class="sub">Mobile antenatal outreach · Marsabit County, Kenya · prototype with synthetic data</div>
+  </div>
+  <span id="source" class="badge">loading…</span>
+  <span id="asof" class="asof"></span>
+</header>
+<main>
+  <aside>
+    <div id="chips" class="chips"></div>
+    <div class="listhead">Outreach priority (highest first)</div>
+    <ol id="list"></ol>
+    <div class="note">All people and positions are simulated. Coordinates and the border line are approximate.</div>
+  </aside>
+  <div id="map"></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const STATUS = {
+  lost_battery:   { label: "Lost: dead battery",   color: "var(--lostbat)" },
+  lost_no_signal: { label: "Lost: no signal",      color: "var(--lostsig)" },
+  across_border:  { label: "In Ethiopia",          color: "var(--border)" },
+  low_battery:    { label: "Low battery",          color: "var(--low)" },
+  anc_overdue:    { label: "ANC visit overdue",    color: "var(--anc)" },
+  ok:             { label: "OK",                   color: "var(--ok)" },
+  no_data:        { label: "No data yet",          color: "var(--nodata)" },
+};
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim();
+const forceDemo = new URLSearchParams(location.search).has("demo");
+const map = L.map("map", { zoomControl: true });
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 13, attribution: "&copy; OpenStreetMap contributors",
+}).addTo(map);
+
+let markers = {}, rows = [], filter = null, selected = null, mode = null;
+const markerLayer = L.layerGroup().addTo(map);
+
+async function loadRegion() {
+  const region = await (await fetch("../geo/region.json")).json();
+  map.setView(region.map_center, region.map_zoom);
+  region.cell_coverage.forEach(c => L.circle([c.lat, c.lon], {
+    radius: c.radius_km * 1000, color: "#0f766e", weight: 1, dashArray: "4 4", fillOpacity: 0.06,
+  }).bindTooltip(`${c.name}: cell coverage`).addTo(map));
+  L.polyline(region.border.map(([lon, lat]) => [lat, lon]), { color: "#7c3aed", weight: 2, dashArray: "8 6" })
+    .bindTooltip("Kenya–Ethiopia border (approximate)").addTo(map);
+  region.outreach_bases.forEach(b => L.marker([b.lat, b.lon], {
+    icon: L.divIcon({ className: "", html: '<div style="width:14px;height:14px;background:#1f1d1a;border:2px solid #fff;box-shadow:0 0 0 1px #1f1d1a"></div>', iconSize: [14, 14] }),
+  }).bindTooltip(b.name).addTo(map));
+  const legend = L.control({ position: "bottomright" });
+  legend.onAdd = () => Object.assign(L.DomUtil.create("div", "legend"), { innerHTML:
+    '<div><span class="dot" style="display:inline-block;background:#1f1d1a;border-radius:0"></span> Outreach base</div>' +
+    '<div><i style="border-color:#0f766e"></i>Cell coverage</div>' +
+    '<div><i style="border-color:#7c3aed"></i>Border (approx.)</div>' +
+    '<div>Hollow marker = last known position</div>' });
+  legend.addTo(map);
+}
+
+async function loadData() {
+  if (!forceDemo) {
+    try {
+      const r = await fetch("/api/latest", { cache: "no-store" });
+      if (r.ok) { const d = await r.json(); if (Array.isArray(d)) return ["live", d]; }
+    } catch (e) { /* fall through to demo data */ }
+  }
+  return ["demo", await (await fetch("demo-data.json", { cache: "no-store" })).json()];
+}
+
+const num = v => (v === null || v === undefined || v === "" ? null : Number(v));
+const fmt = (v, d = 0) => (v === null ? "–" : v.toFixed(d));
+
+function normalise(r) {
+  // n8n's Postgres node returns numeric columns as strings, so coerce everything once.
+  return { ...r, lat: num(r.lat), lon: num(r.lon), battery_pct: num(r.battery_pct), temp_c: num(r.temp_c),
+           hours_since_fix: num(r.hours_since_fix), gestation_weeks: num(r.gestation_weeks),
+           km_to_base: num(r.km_to_base), priority: num(r.priority) ?? 0,
+           anc_visits_done: num(r.anc_visits_done), anc_expected: num(r.anc_expected) };
+}
+
+function popup(r) {
+  const s = STATUS[r.status] || STATUS.no_data;
+  return `<div class="pop"><b>${r.alias}</b> · <span style="color:${css(s.color)}">${s.label}</span>
+    ${r.high_risk ? ' · <b style="color:#b91c1c">HIGH RISK</b>' : ""}
+    <table>
+      <tr><td>Gestation</td><td>${fmt(r.gestation_weeks, 1)} weeks</td></tr>
+      <tr><td>ANC visits</td><td>${r.anc_visits_done} of ${r.anc_expected} expected</td></tr>
+      <tr><td>Last fix</td><td>${fmt(r.hours_since_fix, 1)} h ago via ${r.last_link || "–"}</td></tr>
+      <tr><td>Battery</td><td>${fmt(r.battery_pct)}% ${r.solar ? "(solar)" : "(no solar)"}</td></tr>
+      <tr><td>Distance</td><td>${fmt(r.km_to_base, 1)} km to ${r.nearest_base || "–"}</td></tr>
+      <tr><td>Device</td><td>${r.device_id}</td></tr>
+    </table></div>`;
+}
+
+function render() {
+  markerLayer.clearLayers(); markers = {};
+  const shown = rows.filter(r => !filter || r.status === filter);
+  shown.filter(r => r.lat !== null).forEach(r => {
+    const s = STATUS[r.status] || STATUS.no_data, c = css(s.color);
+    const lost = r.status.startsWith("lost");
+    const m = L.circleMarker([r.lat, r.lon], {
+      radius: r.high_risk ? 9 : 7, color: c, weight: lost ? 2.5 : 1.5,
+      fillColor: c, fillOpacity: lost ? 0 : 0.85, dashArray: lost ? "3 3" : null,
+    }).bindPopup(popup(r));
+    m.on("click", () => select(r.alias, false));
+    markers[r.alias] = m.addTo(markerLayer);
+  });
+
+  const counts = rows.reduce((a, r) => (a[r.status] = (a[r.status] || 0) + 1, a), {});
+  document.getElementById("chips").innerHTML = Object.entries(STATUS).filter(([k]) => counts[k])
+    .map(([k, s]) => `<button class="chip" data-k="${k}" aria-pressed="${filter === k}">
+      <span class="dot" style="background:${css(s.color)}"></span>${s.label} <b>${counts[k]}</b></button>`).join("");
+  document.querySelectorAll(".chip").forEach(b => b.onclick = () => { filter = filter === b.dataset.k ? null : b.dataset.k; render(); });
+
+  document.getElementById("list").innerHTML = shown.map(r => {
+    const s = STATUS[r.status] || STATUS.no_data;
+    return `<li data-a="${r.alias}" class="${selected === r.alias ? "sel" : ""}">
+      <span class="dot" style="background:${css(s.color)}"></span>
+      <span><span class="name">${r.alias}</span>${r.high_risk ? '<span class="tag">HIGH RISK</span>' : ""}</span>
+      <span class="prio">P${r.priority}</span>
+      <span class="meta">${s.label} · ${fmt(r.gestation_weeks, 1)} wk · ANC ${r.anc_visits_done}/${r.anc_expected}
+        · ${fmt(r.battery_pct)}% · ${fmt(r.km_to_base)} km</span></li>`;
+  }).join("");
+  document.querySelectorAll("#list li").forEach(li => li.onclick = () => select(li.dataset.a, true));
+}
+
+function select(alias, fly) {
+  selected = alias;
+  document.querySelectorAll("#list li").forEach(li => li.classList.toggle("sel", li.dataset.a === alias));
+  const m = markers[alias];
+  if (m && fly) { map.flyTo(m.getLatLng(), 10, { duration: 0.6 }); m.openPopup(); }
+  document.querySelector(`#list li[data-a="${alias}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+async function refresh() {
+  const [src, data] = await loadData();
+  rows = data.map(normalise).sort((a, b) => b.priority - a.priority);
+  const badge = document.getElementById("source");
+  badge.textContent = src === "live" ? "Live" : "Demo data";
+  badge.className = "badge " + src;
+  const t = rows.map(r => r.last_fix_at).filter(Boolean).sort().pop();
+  document.getElementById("asof").textContent = t ? "System time " + new Date(t).toUTCString().slice(5, 22) + " UTC" : "";
+  render();
+  if (src === "live" && mode !== "live") setInterval(refresh, 10000);
+  mode = src;
+}
+
+loadRegion().then(refresh);
+</script>
+</body>
+</html>
