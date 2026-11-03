@@ -1,23 +1,35 @@
 # Implementation and validation status
 
-## Added
-- Responsive dashboard: fleet summaries, search, prioritised list, map reset, explicit demo/offline states, API retry and retained stale data.
-- Root GitHub Pages entry opens the synthetic demo.
-- Explicit wall/simulation clock, independently advanced through `nmt/clock`.
-- Input shape and range checks; durable notification outbox with leased delivery and acknowledgement.
-- Five inactive, credential-free n8n workflow templates.
-- Adaptive communication experiment, 270 matched trials, paired uncertainty estimates and raw CSV.
-- Simulator unit tests, SQL edge-case tests, database parity test, browser checks and GitHub Actions configuration.
+Last updated: 3 November 2026.
 
-## Remaining
-- Import and execute n8n templates in a real n8n instance; confirm version compatibility and credentials.
-- Authorised real Telegram delivery check. No messages have been sent.
-- Production TLS, per-device identities, role-based access, audit/retention policies and independently reviewed clinical rules.
-- Visit recording and clinician feedback are a later phase, not implemented here.
-- Field validation, hardware calibration, official geography and ethical review are not completed.
+## Built
+- Desert-aware tracker simulator (movement, heat, solar, cell coverage, store-and-forward, satellite heartbeat, border crossings).
+- PostgreSQL logic: input validation, idempotent ingestion, explicit wall/simulation clock advanced through `nmt/clock`, status view, priority score, alert engine, durable notification outbox with leased delivery and acknowledgement.
+- Responsive dashboard: fleet summaries, search, prioritised list, map reset, explicit demo/offline states, API retry with retained stale data. GitHub Pages always serves the labelled synthetic demo.
+- Five inactive, credential-free n8n workflow templates (Ingest, Clock, Evaluate, Deliver, API).
+- Communication-policy experiment: 270 matched trials, paired bootstrap intervals, raw CSV.
+- Tests and CI (see below).
 
-Five local Python unit tests, JavaScript syntax validation, dashboard logic tests (coercion, search, HTML escaping, outage and recovery), and the 270-trial experiment runner passed. Browser and PostgreSQL checks are configured in CI; consult the actual workflow results rather than assuming success. Docker/n8n/Telegram integration is not represented by a passing SQL test.
+## Verified
+| Check | Where | Result |
+|---|---|---|
+| Simulator unit tests | Local + GitHub Actions | Pass |
+| Database parity (SQL view vs simulator model, 30 mothers) | Local PostgreSQL 16 + GitHub Actions | 0 mismatches, 0 duplicate open alerts |
+| SQL edge cases (dedup, invalid input, clock outage, outbox lease) | Local PostgreSQL 16 + GitHub Actions | Pass |
+| Dashboard logic (coercion, search, escaping, outage, recovery) | Local Node 22 + GitHub Actions | Pass |
+| Browser checks, desktop and mobile (Chromium) | Local + GitHub Actions | Pass |
+| Experiment re-run (270 trials) | Local | Identical to `experiments/results.csv` |
+| Live MQTT publishing from the simulator | Local test broker | Messages received with correct topic and payload |
 
-Existing databases need a reviewed migration or a new isolated Compose project: modifying initialization SQL does not migrate an existing volume. Keep existing data intact.
+## Not yet verified
+- The full Docker Compose stack (Mosquitto, Postgres, n8n, nginx) has not been started end to end.
+- The n8n templates have not been imported or executed in a real n8n instance; version compatibility and credentials are unconfirmed.
+- Telegram delivery has not been tested. No messages have been sent.
 
-GitHub branch creation was rejected with HTTP 403 by the current integration. No remote branch, pull request, CI run or deployment was created. Browser screenshots and PostgreSQL results for these changes are not yet available.
+## Out of scope for this prototype
+- **Real data.** Real tracking and health records are protected health data under Kenya's Data Protection Act (2019), would expose vulnerable people in a border region if leaked, and are not available to this independent project. All data is synthetic; see the README section "Why the data is simulated".
+- Production TLS, per-device identities, role-based access, audit and retention policies.
+- Visit recording, clinician feedback and independently reviewed clinical rules.
+- Field validation, hardware calibration, official geography and ethical review.
+
+Existing databases need a reviewed migration or a new isolated Compose project: changing the initialisation SQL does not migrate an existing volume.

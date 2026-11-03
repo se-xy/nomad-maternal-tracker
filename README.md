@@ -1,5 +1,7 @@
 # Nomad Maternal Tracker
 
+[![Verify prototype](https://github.com/se-xy/nomad-maternal-tracker/actions/workflows/verify.yml/badge.svg)](https://github.com/se-xy/nomad-maternal-tracker/actions/workflows/verify.yml)
+
 **A tracking and alerting system for mobile antenatal care among nomadic pastoralist communities in arid northern Kenya.**
 Research prototype with simulated devices and synthetic data.
 
@@ -7,7 +9,7 @@ Research prototype with simulated devices and synthetic data.
 
 ![Outreach dashboard](docs/dashboard.png)
 
-**Live demo (synthetic data):** https://se-xy.github.io/nomad-maternal-tracker/dashboard/?demo=1
+**Live demo (synthetic data):** https://se-xy.github.io/nomad-maternal-tracker/
 
 ---
 
@@ -96,14 +98,20 @@ python simulator/simulate.py --write-sql   # regenerate db/02_seed.sql from geo/
 
 ## Testing
 
-`tests/db_parity_test.py` builds a fresh database, replays a 14-day simulation through `ingest_batch_b64()` exactly as n8n does, runs the alert engine daily, and checks that:
+Every push runs the [Verify prototype](.github/workflows/verify.yml) workflow on GitHub Actions (PostgreSQL 16 + headless Chromium):
 
-* the SQL `latest_status` view matches the simulator's own model for every mother (status, priority, position, time since last fix), and
-* no mother ever has two open alerts of the same type.
+| Test | Checks |
+|---|---|
+| `tests/test_simulator.py` | Simulator unit tests |
+| `tests/db_parity_test.py` | Replays a 14-day simulation through `ingest_batch_b64()` exactly as n8n would; the SQL `latest_status` view must match the simulator's model for every mother, with no duplicate open alerts |
+| `tests/db_edges.sql` | Duplicate points ignored, invalid latitude rejected, lost contact detected when the clock advances, alert queue deduplicated, wrong delivery token refused |
+| `tests/ui_logic.cjs` | Dashboard data coercion, search, HTML escaping, outage and recovery logic |
+| `tests/ui.cjs` | Desktop and mobile browser checks: 30 mothers listed, search, no horizontal overflow, API outage then recovery |
+| `experiments/run.py --seeds 2` | Experiment smoke run |
 
 ```bash
+python -m unittest discover -s tests -p 'test_*.py'
 PGURL=postgresql://nmt:<password>@localhost:5432/postgres python tests/db_parity_test.py
-# 3820 statements ingested -> 5831 stored fixes (2025 delivered late via store-and-forward, 738 via satellite)
 # status/priority mismatches: 0/30   duplicate open alerts: 0
 ```
 
@@ -114,14 +122,27 @@ docker-compose.yml     Mosquitto · Postgres · n8n · nginx
 geo/region.json        bases, coverage zones, waypoints, border line (single source of truth)
 simulator/             device simulator (MQTT, dry-run, seed generator)
 db/                    schema + logic (01), generated seed data (02)
-workflows/             n8n build guide + exported workflow JSON
+workflows/             five importable n8n templates (inactive, not yet run in n8n) + guide
 dashboard/             single-file Leaflet map + demo data
-tests/                 end-to-end database test
+experiments/           communication-policy experiment (run.py, summarise.py, results.csv)
+docs/                  research notes, implementation status, screenshots
+tests/                 simulator, database, SQL edge-case and browser tests
+.github/workflows/     CI: runs all tests on every push
 ```
 
-## New experiment
+## Research experiment
 
 The matched 270-trial study compares cellular-only, fixed hybrid and adaptive hybrid communication. It reports both energy and location-freshness trade-offs: [methods and results](docs/research.md). These are separate from the original demo run above.
+
+## Why the data is simulated
+
+Real tracking and health records of pregnant women in Marsabit are **not available to this project and could not be published even if they were**:
+
+* **Legal:** health and location data are sensitive personal data under Kenya's Data Protection Act (2019). Using them requires informed consent, a lawful purpose, ethics approval and agreement with the county health authorities.
+* **Security:** the data would reveal where vulnerable women and their families are, in a remote border region. If leaked, that information could put people at risk, so it should never sit in a public repository or a public demo.
+* **Access:** the original pilot's data belongs to that programme, and this is an independent student project with no data-sharing agreement.
+
+So every person, device, movement and health record here is **synthetic**. The project demonstrates the *design* (how data would flow, be checked, prioritised and alerted on) and how it behaves under modelled desert conditions. It does **not** demonstrate real-world accuracy or health impact. Validating it with real data would be a separate phase, done only with the approvals above, on secured infrastructure.
 
 ## Privacy and ethics
 
@@ -135,10 +156,12 @@ A real deployment would also need: informed consent in the local language (and t
 
 ## Limitations
 
+* **All data is simulated** (see [Why the data is simulated](#why-the-data-is-simulated)); model parameters for movement, battery, solar and satellite success are assumptions, not field measurements.
 * Coordinates, coverage radii and the border line are **approximate** and hand-entered.
 * Movement is a simple waypoint model, not based on real migration data.
-* ANC visits are seeded, not recorded; the schedule uses the 4-visit model mentioned in the pilot (WHO's 2016 guidance recommends at least 8 contacts).
-* MQTT and n8n run without authentication (local demo only).
+* ANC visits are seeded, not recorded; the schedule uses the 4-visit model mentioned in the pilot (WHO's 2016 guidance recommends at least 8 contacts). The priority rule is illustrative, not clinically validated.
+* **Not yet run end to end:** the Docker Compose stack, the n8n workflow templates (never imported into a real n8n) and Telegram delivery. Everything else is covered by the automated tests below.
+* MQTT and n8n run without authentication or TLS; ports are bound to localhost only (local demo, never real data).
 
 ## Roadmap
 
