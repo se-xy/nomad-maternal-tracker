@@ -119,7 +119,7 @@ main {margin:0 3.5%;grid-template-columns:360px minmax(0,1fr);gap:20px;min-heigh
   </aside>
   <section class="map-panel"><div class="map-heading"><div><h2>Outreach map</h2><p>Chalbi &amp; Moyale migration ranges</p></div><button id="reset-map" class="map-action">Fit all locations</button></div><div id="map" role="region" aria-label="Map of mothers' last known positions"></div><div class="map-footer"><span><i></i> Last-known fixes · approximate geography</span><span>All people and tracker data are synthetic</span></div></section>
 </main>
-<footer class="page-footer">Independent learning &amp; research project by Peter Robia Mwaniki. No real patients are represented. <a href="https://github.com/se-xy/nomad-maternal-tracker#readme">Project documentation ↗</a></footer>
+<footer class="page-footer">Independent learning &amp; research project by Peter Robia Mwaniki. No real patients are represented: real records are protected health data and are not used. <a href="https://github.com/se-xy/nomad-maternal-tracker#readme">Project documentation ↗</a></footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const STATUS = {
@@ -139,7 +139,8 @@ const FLAGS = [  // secondary problems shown next to the name, beyond the main s
 ];
 const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const st = r => STATUS[r.status] || STATUS.no_data;
-const forceDemo = new URLSearchParams(location.search).has("demo");
+// GitHub Pages has no backend, so it always shows the labelled synthetic demo.
+const forceDemo = new URLSearchParams(location.search).has("demo") || location.hostname.endsWith("github.io");
 
 const map = L.map("map", { zoomControl: true });
 // OpenStreetMap tiles, desaturated via CSS (.leaflet-tile-pane) so the data, not the terrain, stands out.
