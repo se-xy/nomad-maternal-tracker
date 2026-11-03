@@ -5,7 +5,7 @@ Prototype v0.1 with simulated devices and synthetic data.
 
 ![Outreach dashboard](docs/dashboard.png)
 
-**Live demo (synthetic data):** open `dashboard/index.html?demo=1` through GitHub Pages or any static server.
+**Live demo (synthetic data):** https://se-xy.github.io/nomad-maternal-tracker/dashboard/?demo=1
 
 ---
 
