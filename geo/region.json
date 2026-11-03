@@ -1,0 +1,39 @@
+{
+  "_note": "All coordinates are APPROXIMATE and for simulation only. The border polyline is a coarse hand-made approximation of the Kenya-Ethiopia boundary; replace it with an official dataset (e.g. geoBoundaries / Natural Earth) before any real use.",
+  "map_center": [3.1, 38.0],
+  "map_zoom": 8,
+  "outreach_bases": [
+    { "name": "Marsabit base", "lat": 2.335, "lon": 37.990 },
+    { "name": "Moyale base",   "lat": 3.510, "lon": 39.060 }
+  ],
+  "cell_coverage": [
+    { "name": "Marsabit town", "lat": 2.335, "lon": 37.990, "radius_km": 25 },
+    { "name": "Moyale",        "lat": 3.510, "lon": 39.060, "radius_km": 15 },
+    { "name": "Sololo",        "lat": 3.546, "lon": 38.648, "radius_km": 8 },
+    { "name": "North Horr",    "lat": 3.320, "lon": 37.066, "radius_km": 6 },
+    { "name": "Kalacha",       "lat": 3.130, "lon": 37.420, "radius_km": 6 },
+    { "name": "Maikona",       "lat": 2.935, "lon": 37.630, "radius_km": 5 }
+  ],
+  "waypoints": {
+    "west": [
+      { "name": "North Horr",            "lat": 3.320, "lon": 37.066 },
+      { "name": "Kalacha",               "lat": 3.130, "lon": 37.420 },
+      { "name": "Maikona",               "lat": 2.935, "lon": 37.630 },
+      { "name": "Water point W1",        "lat": 3.500, "lon": 37.250 },
+      { "name": "Grazing area W2",       "lat": 2.800, "lon": 37.200 },
+      { "name": "Water point W3",        "lat": 3.050, "lon": 36.950 }
+    ],
+    "east": [
+      { "name": "Moyale",                "lat": 3.510, "lon": 39.060 },
+      { "name": "Sololo",                "lat": 3.546, "lon": 38.648 },
+      { "name": "Water point E1",        "lat": 3.350, "lon": 38.850 },
+      { "name": "Grazing area E2",       "lat": 3.200, "lon": 39.200 },
+      { "name": "Water point E3",        "lat": 3.300, "lon": 38.450 },
+      { "name": "Grazing area (Ethiopia side)", "lat": 3.850, "lon": 39.150, "cross_border": true }
+    ]
+  },
+  "border": [
+    [35.92, 4.62], [36.04, 4.45], [36.85, 4.44], [38.12, 3.61], [38.45, 3.62],
+    [39.05, 3.52], [39.55, 3.43], [40.15, 3.95], [40.77, 4.28], [41.17, 3.94], [41.90, 3.98]
+  ]
+}
