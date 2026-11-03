@@ -44,6 +44,7 @@ def main():
     try:
         psql(TEST_URL, "-f", str(ROOT / "db/01_schema.sql"), "-f", str(ROOT / "db/02_seed.sql"))
 
+        psql(TEST_URL, "-c", "UPDATE system_clock SET mode='simulation'; UPDATE mothers SET enrolled_at=date_trunc('hour',enrolled_at)")
         fleet, rng = sim.build_fleet(30, 42), random.Random(43)
         start = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
         server, sql = sim.OfflineServer(), []
@@ -56,13 +57,15 @@ def main():
         for h in range(14 * 24):
             for m in fleet:
                 sim.step(m, start + timedelta(hours=h), h, rng, send)
+            sql.append(f"SELECT advance_simulation_clock('{(start+timedelta(hours=h)).isoformat()}');")
             if h % 24 == 23:
                 sql.append("SELECT count(*) FROM evaluate_alerts();")
         psql(TEST_URL, stdin="\n".join(sql))
 
-        expected = {r["alias"]: r for r in sim.snapshot(fleet, server, start)}
+        expected = {r["alias"]: r for r in sim.snapshot(fleet, server, start, start+timedelta(hours=14*24-1))}
         rows = psql(TEST_URL, "-c", "SELECT alias, status, priority, lat, hours_since_fix FROM latest_status")
         bad = 0
+        assert len(rows.strip().splitlines()) == len(expected), "Missing mothers in SQL view"
         for line in rows.strip().splitlines():
             alias, status, prio, lat, hrs = line.split("|")
             e = expected[alias]
@@ -84,3 +87,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

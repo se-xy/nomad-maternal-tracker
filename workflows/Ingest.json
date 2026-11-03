@@ -1,0 +1,53 @@
+{
+  "name": "NMT \u2013 Ingest",
+  "nodes": [
+    {
+      "id": "tracker-batches",
+      "name": "Tracker batches",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        240
+      ],
+      "parameters": {
+        "topics": "nmt/tracker/+/batch",
+        "options": {}
+      }
+    },
+    {
+      "id": "store-fixes",
+      "name": "Store fixes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ingest_batch_b64($1) AS inserted;",
+        "options": {
+          "queryReplacement": "={{ [$json.message.base64Encode()] }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Tracker batches": {
+      "main": [
+        [
+          {
+            "node": "Store fixes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

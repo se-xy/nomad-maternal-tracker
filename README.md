@@ -1,7 +1,9 @@
 # Nomad Maternal Tracker
 
 **A tracking and alerting system for mobile antenatal care among nomadic pastoralist communities in arid northern Kenya.**
-Prototype v0.1 with simulated devices and synthetic data.
+Research prototype with simulated devices and synthetic data.
+
+**Current development:** redesigned outreach dashboard, explicit simulation clock, durable alert queue, importable n8n templates, and matched communication-policy experiments. Read [implementation status](docs/implementation-status.md) and [research results](docs/research.md) for verification boundaries.
 
 ![Outreach dashboard](docs/dashboard.png)
 
@@ -46,13 +48,13 @@ flowchart LR
     T -. "satellite heartbeat" .-> B
     B --> I["n8n: Ingest"]
     I -- "ingest_batch_b64()" --> DB[("PostgreSQL<br/>positions · mothers · alerts")]
-    A["n8n: Alerts<br/>every 1 min"] -- "evaluate_alerts()" --> DB
+    A["n8n: Evaluate + delivery<br/>every 1 min"] -- "enqueue_alerts()" --> DB
     A --> TG["Telegram<br/>(SMS on roadmap)"]
     W["n8n: API webhook"] -- "latest_status view" --> DB
     D["Leaflet dashboard"] -- "/api/latest" --> N[nginx] --> W
 ```
 
-All decision logic (status, priority, alert opening/resolving) lives in **PostgreSQL** (`db/01_schema.sql`). The n8n workflows are thin: one trigger, one SQL call, one output. This keeps the logic testable and version-controlled. In this prototype the satellite path goes through the same broker; a real deployment would receive it from the satellite provider's API.
+Core decision logic (status, priority, alert opening/resolving) lives in **PostgreSQL** (`db/01_schema.sql`). The n8n workflows are thin: one trigger, one SQL call, one output. This keeps the logic testable and version-controlled. In this prototype the satellite path goes through the same broker; a real deployment would receive it from the satellite provider's API.
 
 ## What the simulation shows
 
@@ -77,12 +79,12 @@ Requirements: Docker + Docker Compose, Python 3.10+.
 ```bash
 cp .env.example .env                      # set POSTGRES_PASSWORD
 docker compose up -d                      # Mosquitto, Postgres (auto-loads db/*.sql), n8n, dashboard
-# build and activate the three n8n workflows: see workflows/README.md (≈20 min)
+# import and configure the five workflow templates: see workflows/README.md
 pip install -r simulator/requirements.txt
 python simulator/simulate.py --speed 1    # 1 simulated hour per second; 14 days ≈ 6 min
 ```
 
-* Dashboard: http://localhost:8080 (falls back to demo data if the API is not up)
+* Dashboard: http://localhost:8080 (shows explicit offline state if the API is unavailable; add ?demo=1 for synthetic demo)
 * n8n: http://localhost:5678
 
 Other modes:
@@ -116,6 +118,10 @@ workflows/             n8n build guide + exported workflow JSON
 dashboard/             single-file Leaflet map + demo data
 tests/                 end-to-end database test
 ```
+
+## New experiment
+
+The matched 270-trial study compares cellular-only, fixed hybrid and adaptive hybrid communication. It reports both energy and location-freshness trade-offs: [methods and results](docs/research.md). These are separate from the original demo run above.
 
 ## Privacy and ethics
 
@@ -152,3 +158,4 @@ Inspired by the maternal GPS-tracking pilot in Moyale, Marsabit County, led by D
 
 **Peter Robia Mwaniki**, BSc Computer Science, University of Dunaújváros.
 Licensed under the MIT License.
+
