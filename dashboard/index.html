@@ -140,7 +140,7 @@ const FLAGS = [  // secondary problems shown next to the name, beyond the main s
 const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const st = r => STATUS[r.status] || STATUS.no_data;
 // GitHub Pages has no backend, so it always shows the labelled synthetic demo.
-const forceDemo = new URLSearchParams(location.search).has("demo") || location.hostname.endsWith("github.io");
+const forceDemo = new URLSearchParams(location.search).has("demo") || String(location.hostname || "").endsWith("github.io");
 
 const map = L.map("map", { zoomControl: true });
 // OpenStreetMap tiles, desaturated via CSS (.leaflet-tile-pane) so the data, not the terrain, stands out.
