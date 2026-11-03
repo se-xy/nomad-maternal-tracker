@@ -1,0 +1,53 @@
+{
+  "name": "NMT \u2013 Clock",
+  "nodes": [
+    {
+      "id": "simulation-clock",
+      "name": "Simulation clock",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        240
+      ],
+      "parameters": {
+        "topics": "nmt/clock",
+        "options": {}
+      }
+    },
+    {
+      "id": "advance-clock",
+      "name": "Advance clock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT advance_simulation_clock($1::timestamptz);",
+        "options": {
+          "queryReplacement": "={{ [$json.message] }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Simulation clock": {
+      "main": [
+        [
+          {
+            "node": "Advance clock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

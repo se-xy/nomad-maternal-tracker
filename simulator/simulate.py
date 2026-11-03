@@ -115,6 +115,10 @@ class Mother:
     enrolled_days_ago: int
     anc_done: int
     high_risk: bool
+    policy: str = "fixed"
+    last_sat_hour: int = -6
+    last_sat_lat: float | None = None
+    last_sat_lon: float | None = None
     target: dict | None = None
     rest_left: int = 0
     alive: bool = True
@@ -174,6 +178,13 @@ def step(m: Mother, t: datetime, hour_idx: int, rng: random.Random, send):
 
     cov = in_coverage(m.lat, m.lon)
     sat_slot = (not cov) and hour_idx % P["sat_every_h"] == 0
+    if m.policy == "cellular":
+        sat_slot = False
+    elif m.policy == "adaptive":
+        # Non-clinical communication policy: stationary/low-power devices send less often.
+        moved = m.last_sat_lat is None or haversine_km(m.lat, m.lon, m.last_sat_lat, m.last_sat_lon) >= 3
+        interval = 6 if moved and m.battery >= 20 else 12
+        sat_slot = not cov and hour_idx - m.last_sat_hour >= interval
 
     # --- energy
     charge = 0.0
@@ -196,6 +207,9 @@ def step(m: Mother, t: datetime, hour_idx: int, rng: random.Random, send):
     if not m.alive:
         return
 
+    if sat_slot:
+        m.last_sat_hour = hour_idx
+
     # --- fix + transmit
     m.hours_alive += 1
     m.hours_in_cov += cov
@@ -209,6 +223,7 @@ def step(m: Mother, t: datetime, hour_idx: int, rng: random.Random, send):
         send(m, "cell", m.buffer)
         m.buffer = []
     elif sat_slot and rng.random() < P["sat_success"]:
+        m.last_sat_lat, m.last_sat_lon = m.lat, m.lon
         send(m, "sat", m.buffer[-1:])   # heartbeat only; backlog stays in flash
 
 
@@ -236,11 +251,9 @@ class OfflineServer:
             self.last[m.device_id] = newest + [via]
 
 
-def snapshot(fleet, server: OfflineServer, sim_start):
+def snapshot(fleet, server: OfflineServer, sim_start, as_of=None):
     """Same columns and rules as the latest_status view in db/01_schema.sql."""
-    if not server.last:
-        return []
-    now = max(datetime.fromisoformat(p[0].replace("Z", "+00:00")) for p in server.last.values())
+    now = as_of or max((datetime.fromisoformat(p[0].replace("Z", "+00:00")) for p in server.last.values()), default=sim_start)
     rows = []
     for m in fleet:
         enrolled = sim_start - timedelta(days=m.enrolled_days_ago)
@@ -252,7 +265,8 @@ def snapshot(fleet, server: OfflineServer, sim_start):
                    anc_expected=exp, anc_overdue=m.anc_done < exp)
         if p is None:
             row.update(status="no_data", lost=True, low_battery=False, across_border=False,
-                       last_fix_at=None, lat=None, lon=None, priority=0)
+                       last_fix_at=None, lat=None, lon=None,
+                       priority=3 * m.high_risk + 2 * row["anc_overdue"] + 2 + (gw >= 36))
             rows.append(row)
             continue
         ts = datetime.fromisoformat(p[0].replace("Z", "+00:00"))
@@ -310,6 +324,7 @@ def write_sql(fleet, path: Path):
 # --------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--policy", choices=["cellular", "fixed", "adaptive"], default="fixed")
     ap.add_argument("--mothers", type=int, default=30)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--days", type=float, default=14)
@@ -323,6 +338,8 @@ def main():
     a = ap.parse_args()
 
     fleet = build_fleet(a.mothers, a.seed)
+    for m in fleet:
+        m.policy = a.policy
     if a.write_sql:
         write_sql(fleet, ROOT / "db" / "02_seed.sql")
         return
@@ -355,7 +372,7 @@ def main():
     client.loop_start()
 
     def send(m, via, pts):
-        client.publish(f"nmt/tracker/{m.device_id}/batch", payload(m, via, pts), qos=1)
+        client.publish(f"nmt/tracker/{m.device_id}/batch", payload(m, via, pts), qos=1).wait_for_publish()
 
     print(f"publishing {a.mothers} devices to {a.broker}:{a.port}, 1 simulated hour = {a.speed}s")
     try:
@@ -366,6 +383,8 @@ def main():
             if h % 24 == 0:
                 alive = sum(m.alive for m in fleet)
                 print(f"[{t:%Y-%m-%d %H:%M}Z] day {h // 24 + 1}: {alive}/{len(fleet)} devices powered")
+            # Independent simulation clock advances even when every tracker is offline.
+            client.publish("nmt/clock", t.isoformat(), qos=1).wait_for_publish()
             time.sleep(a.speed)
     except KeyboardInterrupt:
         pass
@@ -376,3 +395,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

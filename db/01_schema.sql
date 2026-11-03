@@ -38,11 +38,11 @@ CREATE TABLE positions (
     device_id    text NOT NULL REFERENCES devices,
     recorded_at  timestamptz NOT NULL,          -- when the GPS fix was taken (device clock)
     received_at  timestamptz NOT NULL DEFAULT now(),
-    lat          double precision NOT NULL,
-    lon          double precision NOT NULL,
-    battery_pct  real,
-    temp_c       real,
-    link         text NOT NULL,                 -- 'cell' or 'sat'
+    lat          double precision NOT NULL CHECK (lat BETWEEN -90 AND 90),
+    lon          double precision NOT NULL CHECK (lon BETWEEN -180 AND 180),
+    battery_pct  real CHECK (battery_pct BETWEEN 0 AND 100),
+    temp_c       real CHECK (temp_c BETWEEN -80 AND 100),
+    link         text NOT NULL CHECK (link IN ('cell','sat')),                 -- 'cell' or 'sat'
     buffered     boolean NOT NULL DEFAULT false, -- delivered late via store-and-forward
     UNIQUE (device_id, recorded_at)              -- makes re-delivery idempotent
 );
@@ -60,11 +60,20 @@ CREATE TABLE alerts (
 CREATE UNIQUE INDEX one_open_alert ON alerts (device_id, alert_type) WHERE resolved_at IS NULL;
 
 -- ---------------------------------------------------------------- helpers
--- "Current time" of the system. With the simulator, time runs faster than real time,
--- so we use the newest fix the server has received. In a real deployment: RETURN now().
+-- Explicit clock: wall time for services, manually advanced time for replay experiments.
+CREATE TABLE system_clock (
+    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+    mode text NOT NULL DEFAULT 'wall' CHECK (mode IN ('wall','simulation')),
+    simulated_at timestamptz
+);
+INSERT INTO system_clock DEFAULT VALUES;
 CREATE FUNCTION system_now() RETURNS timestamptz
 LANGUAGE sql STABLE AS $$
-    SELECT COALESCE(max(recorded_at), now()) FROM positions
+    SELECT CASE WHEN mode='simulation' THEN COALESCE(simulated_at, now()) ELSE now() END FROM system_clock
+$$;
+CREATE FUNCTION advance_simulation_clock(t timestamptz) RETURNS void
+LANGUAGE sql AS $$
+    UPDATE system_clock SET simulated_at=GREATEST(simulated_at,t) WHERE mode='simulation'
 $$;
 
 CREATE FUNCTION haversine_km(lat1 float8, lon1 float8, lat2 float8, lon2 float8) RETURNS float8
@@ -97,6 +106,24 @@ CREATE FUNCTION ingest_batch(p jsonb) RETURNS int
 LANGUAGE plpgsql AS $$
 DECLARE n int;
 BEGIN
+    IF jsonb_typeof(p) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(p->'pts') IS DISTINCT FROM 'array'
+       OR p->>'via' IS NULL OR p->>'via' NOT IN ('cell','sat')
+       OR NOT EXISTS (SELECT 1 FROM devices WHERE device_id=p->>'d') THEN
+        RAISE EXCEPTION 'Invalid tracker payload';
+    END IF;
+    IF jsonb_array_length(p->'pts') NOT BETWEEN 1 AND 1000 THEN
+        RAISE EXCEPTION 'Batch must contain 1..1000 points';
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p->'pts') pt
+               WHERE jsonb_typeof(pt) IS DISTINCT FROM 'array') THEN
+        RAISE EXCEPTION 'Points must be arrays';
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p->'pts') pt
+               WHERE jsonb_array_length(pt) <> 5 OR pt->>0 IS NULL
+                  OR pt->>1 IS NULL OR pt->>2 IS NULL OR pt->>3 IS NULL OR pt->>4 IS NULL) THEN
+        RAISE EXCEPTION 'Each fix needs timestamp, latitude, longitude, battery, temperature';
+    END IF;
     INSERT INTO positions (device_id, recorded_at, lat, lon, battery_pct, temp_c, link, buffered)
     SELECT p->>'d',
            (pt->>0)::timestamptz, (pt->>1)::float8, (pt->>2)::float8,
@@ -208,7 +235,7 @@ BEGIN
             ('LOST_CONTACT',   s.lost,
              format('📡 %s no contact for %s h — likely %s. Last known: %s, %s (%s km from %s).',
                     s.alias, s.hours_since_fix,
-                    CASE WHEN s.battery_pct < 10 THEN 'dead battery' ELSE 'out of coverage' END,
+                    CASE WHEN s.battery_pct < 10 THEN 'battery failure (unconfirmed)' ELSE 'connectivity loss (unconfirmed)' END,
                     round(s.lat::numeric, 3), round(s.lon::numeric, 3), s.km_to_base, s.nearest_base)),
             ('CROSSED_BORDER', s.across_border,
              format('🛂 %s crossed into Ethiopia (%s, %s). Kenyan teams cannot follow — flag for return.',
@@ -228,4 +255,43 @@ BEGIN
     )
     SELECT 'opened', c.alias, o.alert_type, o.message
     FROM opened o JOIN candidates c ON c.device_id = o.device_id AND c.alert_type = o.alert_type;
+END $$;
+
+
+-- Durable notification outbox. At-least-once delivery: a crash after sending but
+-- before acknowledgement can cause a duplicate. Failed sends remain retryable.
+CREATE TABLE notification_outbox (
+    id bigserial PRIMARY KEY,
+    event text NOT NULL,
+    alias text NOT NULL,
+    alert_type text NOT NULL,
+    message text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    delivered_at timestamptz,
+    attempts int NOT NULL DEFAULT 0,
+    lease_until timestamptz,
+    lease_token text
+);
+CREATE FUNCTION enqueue_alerts() RETURNS int LANGUAGE plpgsql AS $$
+DECLARE n int;
+BEGIN
+    PERFORM pg_advisory_xact_lock(724803);
+    INSERT INTO notification_outbox(event,alias,alert_type,message)
+        SELECT * FROM evaluate_alerts();
+    GET DIAGNOSTICS n=ROW_COUNT;
+    RETURN n;
+END $$;
+CREATE FUNCTION claim_notifications() RETURNS SETOF notification_outbox LANGUAGE sql AS $$
+    UPDATE notification_outbox SET attempts=attempts+1, lease_until=now()+interval '5 minutes',
+        lease_token=md5(random()::text || clock_timestamp()::text || id::text)
+    WHERE id IN (SELECT id FROM notification_outbox
+        WHERE delivered_at IS NULL AND (lease_until IS NULL OR lease_until<now())
+        ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 20)
+    RETURNING *
+$$;
+CREATE FUNCTION acknowledge_notification(p_id bigint,p_token text) RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE notification_outbox SET delivered_at=now(),lease_until=NULL
+      WHERE id=p_id AND lease_token=p_token AND delivered_at IS NULL;
+    RETURN FOUND;
 END $$;

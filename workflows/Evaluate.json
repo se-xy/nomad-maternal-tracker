@@ -1,0 +1,57 @@
+{
+  "name": "NMT \u2013 Evaluate",
+  "nodes": [
+    {
+      "id": "every-minute",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        240
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "queue-alert-changes",
+      "name": "Queue alert changes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT enqueue_alerts();",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Queue alert changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

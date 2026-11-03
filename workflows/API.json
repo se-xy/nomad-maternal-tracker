@@ -1,0 +1,78 @@
+{
+  "name": "NMT \u2013 API",
+  "nodes": [
+    {
+      "id": "latest-status",
+      "name": "Latest status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        240
+      ],
+      "parameters": {
+        "path": "latest",
+        "httpMethod": "GET",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "read-status",
+      "name": "Read status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM latest_status ORDER BY priority DESC,alias;",
+        "options": {}
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        240
+      ],
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Latest status": {
+      "main": [
+        [
+          {
+            "node": "Read status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read status": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

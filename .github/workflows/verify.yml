@@ -1,0 +1,47 @@
+name: Verify prototype
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  database-and-model:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nmt
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nmt" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGURL: postgresql://nmt:test-only@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - run: python tests/db_parity_test.py
+      - name: Independent SQL edge cases
+        run: |
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f db/01_schema.sql -f db/02_seed.sql -f tests/db_edges.sql
+      - run: python experiments/run.py --seeds 2 --output /tmp/smoke.csv
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save playwright
+      - run: npx playwright install --with-deps chromium
+      - run: python3 -m http.server 8765 &
+      - run: node tests/ui_logic.cjs
+      - run: node tests/ui.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard-screenshots
+          path: test-artifacts/
